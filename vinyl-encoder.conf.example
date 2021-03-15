@@ -1,0 +1,43 @@
+
+#
+# Mapping CSV how recordings relate to discogs release IDs
+#
+DISCOGS_MAPPINGS
+
+#
+# Temporary directory for splitting record recordings into individual tracks
+#
+# Directory structure: 
+#	_/${discogs release id}/${discogs release id}-${track id}.WAV
+#	${compressed format}/${discogs release id}/${track id}.${format}
+#
+DIR_TEMP_SPLIT=
+
+#
+# Temporary directory for compressed files
+#
+DIR_TEMP_COMPRESSED=
+
+#
+# What compressed formats to generate
+#
+# The format string is: FORMAT-BITRATE-OPTIONS
+#
+# Valid formats are for now:
+# MP3
+# FLAC
+#
+# Bitrates are as specified. Subtypes are specific for each format. For MP3 the
+# following subtypes are defined:
+# CBR - Constant bitrate
+# ABR - Average bitrate
+# VBR - Variable bitrate
+#
+# Examples:
+# MP3-128-CBR:	Encode MP3 128kbit Constant Bit Rate (the most compatible lowest
+#		bitrate format that still sounds somewhat okay).
+# MP3-240-VBR:	Encode MP3 240kbit Variable Bit Rate (the highest sound quality
+#		for MP3 that still makes sense)
+# FLAC-24:	Lossless compression with 24bit quantisation
+COMPRESSED_FORMATS="MP3-128-CBR MP3-240-VBR FLAC-24"
+
