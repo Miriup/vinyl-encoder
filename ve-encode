@@ -1,0 +1,114 @@
+#!/bin/bash
+
+FORCE=""
+
+#
+# Step 2: Encode into specified formats
+#
+# TODO There must be a better way than running `find`
+#
+while [ -n "$*" ]
+do
+	IN_FILE="$1"
+	shift
+	unset OUT_FILE
+	#read DISCOGS_RELEASE DISCOGS_SIDE TRACK_NO EXTENSION <<< $(basename ${FILE})
+	IFS='-.' read DISCOGS_RELEASE DISCOGS_SIDE TRACK_NO EXTENSION <<< $(basename ${IN_FILE})
+
+	# Parse command line parameters
+	# Doing it here allows modifying settings for each file
+	while [[ $1 == --* ]]
+	do
+		case "$1" in
+			--output-dir)
+				DIR_TEMP_COMPRESSED="$2"
+				shift
+				;;
+			--output-file)
+				OUT_FILE="$2"
+				shift
+				;;
+			--discogs-release)
+				DISCOGS_RELEASE="$2"
+				shift
+				;;
+			--discogs-side)
+				DISCOGS_SIDE="$2"
+				shift
+				;;
+			--track-no)
+				TRACK_NO="$2"
+				shift
+				;;
+			--compressed-formats)
+				COMPRESSED_FORMATS="$2"
+				shift
+				;;
+			--debug)
+				set -x
+				;;
+			--no-debug)
+				set +x
+				;;
+			--force)
+				FORCE="Y"
+				;;
+			--help)
+				echo "Syntax: $0 {file1.WAV} [options] [...]"
+				echo
+				exit 0
+				;;
+			*)
+				echo "Parameter $1 not understood."
+				exit 1
+				;;
+		esac
+		shift
+	done
+
+	for COMPRESSED_FORMAT in ${COMPRESSED_FORMATS}
+	do
+		# Create an array with the compression parameters
+		IFS='-' read -a FORMAT_COMPONENTS <<< ${COMPRESSED_FORMAT}
+		# Create container directory
+		mkdir -p "${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}"
+		ln $(dirname $IN_FILE)/id.txt "${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/"
+		case "${COMPRESSED_FORMAT}" in
+			MP3-*)
+				# Encode as MP3
+				MP3_BITRATE=${FORMAT_COMPONENTS[1]%-}
+				case ${FORMAT_COMPONENTS[2]} in
+					ABR)
+						MP3_STRAT=" --abr $MP3_BITRATE -q0"
+						;;
+					VBR)
+						MP3_STRAT=" --vbr-new -V0 -b $MP3_BITRATE"
+						;;
+					CBR)
+						MP3_STRAT=" --cbr -q0 -b $MP3_BITRATE"
+						;;
+					*)
+						echo "${FORMAT_COMPONENTS[2]} not understood."
+						exit
+						;;
+				esac
+				[ -z "${OUT_FILE}" ] && OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.mp3"
+				lame $MP3_STRAT --tn ${TRACK_NO} \
+					"${IN_FILE}" \
+					"${OUT_FILE}"
+				;;
+			FLAC-*)
+				# Encode as FLAC
+				FLAC_BPS=${FORMAT_COMPONENTS[1]}
+				[ -z "${OUT_FILE}" ] && OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.flac"
+				flac --keep-foreign-metadata --best \
+					"${IN_FILE}" \
+					-o "${OUT_FILE}"
+				;;
+			*)
+				echo "Compressed format \"${COMPRESSED_FORMAT}\" not recognised."
+				exit
+				;;
+		esac
+	done
+done

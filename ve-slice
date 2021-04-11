@@ -1,0 +1,121 @@
+#!/bin/bash
+
+FORCE=""
+
+#source vinyl-encoder.conf
+
+#
+# Step 1: Slice the files
+#
+while [ -n "$*" ]
+do
+	# Parse command line parameters
+	# Doing it here allows modifying settings for each file
+	while [[ $1 == -* ]]
+	do
+		case "$1" in
+			--output-dir)
+				DIR_TEMP_SPLIT="$2"
+				shift
+				;;
+			--discogs-csv)
+				DISCOGS_MAPPINGS="$2"
+				shift
+				;;
+			--debug)
+				set -x
+				;;
+			--no-debug)
+				set +x
+				;;
+			--force)
+				FORCE="Y"
+				;;
+			--help|-h)
+				echo "Syntax: $0 [options] {file1.WAV} {file1.txt} [...]"
+				echo
+				echo "--output-dir\tWhere to save the split files"
+				echo "--discogs-csv\tWhere to read the mapping from recording to discogs ID from"
+				echo "--debug, --no-debug"
+				echo "--force"
+				exit 0
+				;;
+			*)
+				echo "Parameter $1 not understood."
+				exit 1
+				;;
+		esac
+		shift
+	done
+
+	LAST_STOP=0			# The current audio position
+	SUB=0				# The number of the current split (for noise profile)
+	FILE="$1"			# The file to split
+	shift
+	AUDACITY="$1"			# The splitter markings
+	shift
+	FILE_BASE=$(basename "${FILE}")	# Used to locate the Audacity labels later
+
+	# Look up discogs ID
+	# FIXME Why the heck doesn't this work with a pipe?! Context?
+	grep ${FILE_BASE%.WAV} ${DISCOGS_MAPPINGS} > /tmp/dirk-vinyl-encoder
+	read RECORDING DISCOGS_RELEASE DISCOGS_SIDE REST < /tmp/dirk-vinyl-encoder
+
+	if [ "x${DISCOGS_RELEASE}" == "x" ] 
+	then
+		echo "No discogs ID for ${FILE_BASE%.WAV} in ${DISCOGS_MAPPINGS}"
+		exit 2
+	fi
+
+	# Create Album dir, if it doesn't exist
+	DIR_ALBUM=${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}
+	if ! test -d ${DIR_ALBUM} 
+	then
+		mkdir ${DIR_ALBUM}
+		echo ${DISCOGS_RELEASE} > ${DIR_ALBUM}/id.txt
+	fi
+
+	# Base setup of sox command to execute to split the files
+	SOX_COMMANDS="sox ${FILE} ${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}/${DISCOGS_RELEASE}-${DISCOGS_SIDE}%1n.wav"		
+
+	if [ ! -e ${AUDACITY} ]
+	then
+		echo "Label file not found: ${AUDACITY}"
+		exit 4
+	fi
+
+	# Assumptions for the below: There's always a silence in the beginning
+	# and always there is one at the end.
+	# Useless use of cat ;-) FIXME How was this done properly?
+	cat ${AUDACITY} | while read START STOP LABEL REST
+	do
+		if [ "x${START}" == "x" ]
+		then
+			echo "Label file ${AUDACITY} at line $SUB"
+			exit 5
+		fi
+		#if [[ ${LABEL} == [0-9]* ]]
+		#then
+		#	echo Not implemented
+		#	exit 1
+		#else
+			# Unknown label type, assume silence band tagging
+			#
+			# Generate the track WAV
+			if [ "x${LAST_STOP}" != 'x0' ]
+			then
+				#SOX_COMMANDS="$SOX_COMMANDS trim =${LAST_STOP} =${START} : newfile :"
+				OUTFILE=${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}/${DISCOGS_RELEASE}-${DISCOGS_SIDE}-${SUB}.wav 
+				test -z "${FORCE}" -a -e $OUTFILE || sox ${FILE} ${OUTFILE} trim =${LAST_STOP} =${START} spectrogram -h -c '' -w Hamming -o ${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}/${DISCOGS_RELEASE}-${DISCOGS_SIDE}-${SUB}-spectrogram.png
+			fi
+			# This comes after creating the audio track, but before the next noise profile is created so that the noise profiles are always labeled for the track that comes after them
+			let SUB=${SUB}+1
+			# Trim out silence and generate noise profile from it:
+			OUTFILE=${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}/${DISCOGS_RELEASE}-${DISCOGS_SIDE}-${SUB}.noiseprofile
+			#SOX_COMMANDS="$SOX_COMMANDS trim =${START} =${STOP} noiseprof ${DIR_TEMP_SPLIT}/${DISCOGS_RELEASE}/${DISCOGS_RELEASE}-${DISCOGS_SIDE}${SUB}.soxnoiseprof :"
+			test -z "${FORCE}" -a -e $OUTFILE || sox ${FILE} -n trim =${START} =${STOP} noiseprof $OUTFILE
+			LAST_START=${START}
+			LAST_STOP=${STOP}
+		#fi
+	done
+done

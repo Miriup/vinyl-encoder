@@ -1,0 +1,126 @@
+#!/usr/bin/python
+#
+# 
+#
+
+import argparse		# Command line args
+import json		# Parse json
+import pprint		# Debug
+import subprocess	# Excecute processes and capture output
+import re		# Pattern matching
+import os		# /dev/null
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+# Parse command line parameters
+p = argparse.ArgumentParser(description="Finds the optimal silence detection parameters aided by discogs release info")
+p.add_argument('discogs_json', help='JSON file containing discogs release info')
+p.add_argument('wav', help='WAV to run silence detection on')
+p.add_argument('side', help='Record side to check (technically the track position prefix, i.e. A for A1)')
+p.add_argument('--noise_db', help='Initial noise dB for silence detection', type=float, default=-10)
+p.add_argument('--silence_length', help='Length of the silence between tracks to be expected [s]', type=float, default=2.5)
+p.add_argument('--tolerance', help='The track length tolerance that is acceptable [s]', type=float, default=1.0)
+args=p.parse_args()
+
+# Load JSON
+
+tracklength = []	# Track lengths according to discogs
+
+with open(args.discogs_json, 'r') as infile:
+	j = json.load(infile)
+	# ["tracklist"]["duration"]
+	for track in j["tracklist"]:
+		if( not track["position"].startswith(args.side) ): continue
+		(m,s)=track["duration"].split(":")
+		#pprint.pprint( m )
+		#pprint.pprint( s )
+		#print( int(m)*60+int(s) )
+		tracklength.append( int(m)*60+int(s) )
+
+# Execute FFMPEG and run silence detection
+# DEBUG:root:b"Output #0, null, to '/dev/null':\n"
+# DEBUG:root:b'  Metadata:\n'
+# DEBUG:root:b'    encoder         : Lavf57.71.100\n'
+# DEBUG:root:b'    Stream #0:0: Audio: pcm_s16le, 44100 Hz, stereo, s16, 1411 kb/s\n'
+# DEBUG:root:b'    Metadata:\n'
+# DEBUG:root:b'      encoder         : Lavc57.89.100 pcm_s16le\n'
+# DEBUG:root:b'size=N/A time=00:00:36.06 bitrate=N/A speed=72.1x    \rsize=N/A time=00:01:27.20 bitrate=N/A speed=87.2x    \rsize=N/A time=00:02:17.59 bitrate=N/A speed=91.7x    \rsize=N/A time=00:03:08.71 bitrate=N/A speed=94.4x    \rsize=N/A time=00:03:59.84 bitrate=N/A speed=95.9x    \rsize=N/A time=00:04:50.94 bitrate=N/A speed=  97x    \r[silencedetect @ 0x7bb8641860] silence_start: 325.257\n'
+# DEBUG:root:b'[silencedetect @ 0x7bb8641860] silence_end: 330.407 | silence_duration: 5.14961\n'
+# DEBUG:root:b'size=N/A time=00:05:41.92 bitrate=N/A speed=97.7x    \rsize=N/A time=00:06:33.05 bitrate=N/A speed=98.3x    \rsize=N/A time=00:07:23.36 bitrate=N/A speed=98.5x    \rsize=N/A time=00:08:14.44 bitrate=N/A speed=98.9x    \rsize=N/A time=00:09:05.50 bitrate=N/A speed=99.2x    \rsize=N/A time=00:09:56.57 bitrate=N/A speed=99.4x    \rsize=N/A time=00:10:47.62 bitrate=N/A speed=99.6x    \r[silencedetect @ 0x7bb8641860] silence_start: 668.02\n'
+# DEBUG:root:b'[silencedetect @ 0x7bb8641860] silence_end: 678.799 | silence_duration: 10.7788\n'
+# DEBUG:root:b'size=N/A time=00:11:22.92 bitrate=N/A speed=99.7x    \n'
+# DEBUG:root:b'video:0kB audio:117644kB subtitle:0kB other streams:0kB global headers:0kB muxing overhead: unknown\n'
+
+# Create a noise profile from the 1st 3s
+# sox ~/Music/AJ3/0723_234135.WAV -n trim =0 =3 noiseprof /tmp/noiseprofile
+# Create a noise reduced recording
+# sox ~/Music/AJ3/0723_234135.WAV /tmp/noice.wav noisered /tmp/noiseprofile 1
+# Run silence detection on noise reduced recording
+# ffmpeg -i /tmp/noice.wav -af silencedetect=noise=-100dB:d=3 -f null /dev/null
+# ...and then check if the detected non-silences match the discogs record
+
+# Silence detection loop: try to find the optimal silence detection settings
+duration = None
+devnull = open(os.devnull, 'wb')
+r_silence = re.compile( r" silence_(start|end): ([\d\.]+)", re.MULTILINE )
+r_duration = re.compile( r"Duration: (\d{1,2}):(\d{1,2}):([\d\.]+)", re.MULTILINE )
+min_noise = None
+max_noise = None
+cur_noise = args.noise_db
+
+while cur_noise > min noise and cur_noise < max_noise:
+
+	silences = []		# Detected silences
+	silence = [None,None]	# Individual silence parameters collected
+
+	# Run noise detection and capture output
+	p = subprocess.Popen( [ "ffmpeg","-i",args.wav,"-af","silencedetect=%idB:d=%i" % (args.noise_db, args.silence_length) ,"-f","null","/dev/null" ], shell=False, stdout=devnull, stderr=subprocess.PIPE )
+	while True:
+		l = p.stderr.readline()
+		if not l: 
+			break
+		#m = re.match( r"silence_(start|end): ([0-9\.]+)", str(l) )
+		if duration is None:
+			m = r_duration.search( str(l) )
+			if m:
+				duration = float(m.group(1))*3600+float(m.group(2))*60+float(m.group(3))
+		m = r_silence.search( str(l) )
+		if m:
+			#logging.debug(l)
+			if( m.group(1) == "start" ):
+				silence[0] = float(m.group(2))
+			elif( m.group(1) == "end" ):
+				silence[1] = float(m.group(2))
+				silences.append( silence )
+				silence = [None,None]
+	
+	# Determine from our knowledge of the record what's the next step - if any
+        #
+	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -8 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+	# [[1.20122, 3.81982],
+	#  [59.7048, 62.3079],
+	#  [325.236, 330.422],
+	#  [336.974, 339.469],
+	#  [668.015, 678.83]]
+	# 682.92
+	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -10 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+	# [[1.20122, 3.80435], [325.252, 328.52], [668.169, 678.799]]
+	# 682.92
+	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -11 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+	# [[1.20122, 3.80435], [668.169, 673.402], [675.206, 678.799]]
+	# 682.92
+        #
+	# Basic ideas:
+	# * There's noise before and after a track, thus the expected number of silences detected is tracks+1
+	# * If we have more silences than tracks+1, noise is too 
+
+	if silences.length() > tracklength.length()+1:
+		# too big
+		max_noise = cur_noise
+	elif silences.length() < tracklength.length():
+		min_noise = cur_noise
+        else:
+
+pprint.pprint(silences)
+pprint.pprint(duration)
