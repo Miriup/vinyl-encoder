@@ -9,6 +9,7 @@ import pprint		# Debug
 import subprocess	# Excecute processes and capture output
 import re		# Pattern matching
 import os		# /dev/null
+import sys              # exit
 import logging
 
 logging.basicConfig(level=logging.DEBUG)
@@ -18,9 +19,12 @@ p = argparse.ArgumentParser(description="Finds the optimal silence detection par
 p.add_argument('discogs_json', help='JSON file containing discogs release info')
 p.add_argument('wav', help='WAV to run silence detection on')
 p.add_argument('side', help='Record side to check (technically the track position prefix, i.e. A for A1)')
-p.add_argument('--noise_db', help='Initial noise dB for silence detection', type=float, default=-10)
+p.add_argument('txt', help='Audacity label file to write')
+p.add_argument('--noise_db', help='Initial noise dB for silence detection', type=float, default=-70)
 p.add_argument('--silence_length', help='Length of the silence between tracks to be expected [s]', type=float, default=2.5)
-p.add_argument('--tolerance', help='The track length tolerance that is acceptable [s]', type=float, default=1.0)
+p.add_argument('--tolerance', help='The track length tolerance that is acceptable [s]', type=float, default=5.0)
+p.add_argument('--before', help='Include that much time before a track as safety buffer [s]', type=float, default=1.0)
+p.add_argument('--after', help='Include that much time after a track as safety buffer [s]', type=float, default=2.0)
 args=p.parse_args()
 
 # Load JSON
@@ -69,58 +73,75 @@ min_noise = None
 max_noise = None
 cur_noise = args.noise_db
 
-while cur_noise > min noise and cur_noise < max_noise:
+silences = []		        # Detected silences
+silence = [None,None,True]	# Individual silence parameters collected and a flag if the silence can be used
 
-	silences = []		# Detected silences
-	silence = [None,None]	# Individual silence parameters collected
+# Run noise detection and capture output
+p = subprocess.Popen( [ "ffmpeg","-i",args.wav,"-af","silencedetect=%idB:d=%i" % (args.noise_db, args.silence_length) ,"-f","null","/dev/null" ], shell=False, stdout=devnull, stderr=subprocess.PIPE )
+while True:
+        l = p.stderr.readline()
+        if not l: 
+                break
+        #m = re.match( r"silence_(start|end): ([0-9\.]+)", str(l) )
+        if duration is None:
+                m = r_duration.search( str(l) )
+                if m:
+                        duration = float(m.group(1))*3600+float(m.group(2))*60+float(m.group(3))
+        m = r_silence.search( str(l) )
+        if m:
+                #logging.debug(l)
+                if( m.group(1) == "start" ):
+                        silence[0] = float(m.group(2))
+                elif( m.group(1) == "end" ):
+                        silence[1] = float(m.group(2))
+                        silences.append( silence )
+                        silence = [None,None,True]
 
-	# Run noise detection and capture output
-	p = subprocess.Popen( [ "ffmpeg","-i",args.wav,"-af","silencedetect=%idB:d=%i" % (args.noise_db, args.silence_length) ,"-f","null","/dev/null" ], shell=False, stdout=devnull, stderr=subprocess.PIPE )
-	while True:
-		l = p.stderr.readline()
-		if not l: 
-			break
-		#m = re.match( r"silence_(start|end): ([0-9\.]+)", str(l) )
-		if duration is None:
-			m = r_duration.search( str(l) )
-			if m:
-				duration = float(m.group(1))*3600+float(m.group(2))*60+float(m.group(3))
-		m = r_silence.search( str(l) )
-		if m:
-			#logging.debug(l)
-			if( m.group(1) == "start" ):
-				silence[0] = float(m.group(2))
-			elif( m.group(1) == "end" ):
-				silence[1] = float(m.group(2))
-				silences.append( silence )
-				silence = [None,None]
-	
-	# Determine from our knowledge of the record what's the next step - if any
-        #
-	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -8 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
-	# [[1.20122, 3.81982],
-	#  [59.7048, 62.3079],
-	#  [325.236, 330.422],
-	#  [336.974, 339.469],
-	#  [668.015, 678.83]]
-	# 682.92
-	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -10 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
-	# [[1.20122, 3.80435], [325.252, 328.52], [668.169, 678.799]]
-	# 682.92
-	# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -11 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
-	# [[1.20122, 3.80435], [668.169, 673.402], [675.206, 678.799]]
-	# 682.92
-        #
-	# Basic ideas:
-	# * There's noise before and after a track, thus the expected number of silences detected is tracks+1
-	# * If we have more silences than tracks+1, noise is too 
+# Determine from our knowledge of the record what's the next step - if any
+#
+# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -8 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+# [[1.20122, 3.81982],
+#  [59.7048, 62.3079],
+#  [325.236, 330.422],
+#  [336.974, 339.469],
+#  [668.015, 678.83]]
+# 682.92
+# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -10 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+# [[1.20122, 3.80435], [325.252, 328.52], [668.169, 678.799]]
+# 682.92
+# dirk@korean-netbook ~/src/vinyl-encoder $ ./ve-silencedetect --silence_length 2.5 --noise_db -11 ~/Music/Temp/2/MP3-128-CBR/60643/60643.json ~/Music/AJ3/0723_234135.WAV A
+# [[1.20122, 3.80435], [668.169, 673.402], [675.206, 678.799]]
+# 682.92
+#
+# Basic ideas:
+# * There's noise before and after a track, thus the expected number of silences detected is tracks+1
+# * If we have more silences than tracks+1, noise is too 
 
-	if silences.length() > tracklength.length()+1:
-		# too big
-		max_noise = cur_noise
-	elif silences.length() < tracklength.length():
-		min_noise = cur_noise
-        else:
+# Now check if we can account for all tracks in the detected silences
+tracks = []         # track time indices
+for l in tracklength:
+    found = None
+    for i in range(len(silences)-1):
+        if not silences[i+1][2]: continue   # already used
+        logging.debug( "Checking for track length %i in %i-%i=%i)" % (l,silences[i+1][0],silences[i][1],silences[i+1][0]-silences[i][1]) )
+        if abs(silences[i+1][0]-silences[i][1]-l) < args.tolerance:
+            found = (silences[i][1],silences[i+1][0])
+            silences[i+1][2] = False        # mark used
+            break
+    if found is not None:
+        tracks.append(found)
+    else:
+        logging.error( "Track of length %i not found." % l )
+        sys.exit(1)
 
-pprint.pprint(silences)
-pprint.pprint(duration)
+# At this point the tracks array contains actual track indices in the audio file
+# All that is now left to do is to save the silences to an Audacity txt file.
+logging.debug(silences)
+logging.debug(duration)
+logging.debug(tracks)
+
+with open(args.txt, 'w') as outfile:
+    outfile.write( "0.000000\t" )
+    for i in range(len(tracks)):
+        outfile.write( "%.6f\t\n%.6f\t" % ( tracks[i][0]-args.before, tracks[i][1]+args.after ) )
+    outfile.write( "%.6f\t\n" % duration )
