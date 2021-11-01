@@ -64,6 +64,13 @@ with open(args.discogs_json, 'r') as infile:
 # ffmpeg -i /tmp/noice.wav -af silencedetect=noise=-100dB:d=3 -f null /dev/null
 # ...and then check if the detected non-silences match the discogs record
 
+# or
+
+# for FILE in *.WAV; do sox ${FILE} -n trim =0 =3 noiseprof ../Temp/0/${FILE%.WAV}.soxnoiseprof; done
+# for FILE in *.WAV; do sox ${FILE} ../Temp/0/${FILE} noisered ../Temp/0/${FILE%.WAV}.soxnoiseprof; done
+# for FILE in *.WAV; do grep "${FILE%.WAV}" ../../AJ/digitised.csv; done | while read TIME DISCOGS SIDE REST; do echo $DISCOGS; done | sort -n | uniq | while read DISCOGS; do echo curl -o $DISCOGS.json https://api.discogs.com/releases/$DISCOGS; done
+# set -x; (while read TAG DISCOGS SIDE REST; do echo $TAG/$DISCOGS/$SIDE; test -e ${TAG}.txt || (test -e ${TAG}.WAV -a -e ../../AJ3/${DISCOGS}.json && ~/src/vinyl-encoder/ve-silencedetect ../../AJ3/${DISCOGS}.json ${TAG}.WAV ${SIDE} ${TAG}.txt 2> ${TAG}.log ); done) < ../../AJ/digitised.csv; set +x
+
 # Silence detection loop: try to find the optimal silence detection settings
 duration = None
 devnull = open(os.devnull, 'wb')
