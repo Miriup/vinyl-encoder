@@ -16,7 +16,7 @@ DIGITISED_CSV=$(STAGE0)/digitised.csv
 # Stage 1
 #
 $(STAGE1)/%.soxnoiseprof: $(STAGE0)/%.WAV
-	sox $< -n trim =0 =3 noiseprof $@
+	sox $< -n trim =0 =1 noiseprof $@
 
 $(STAGE1)/%.WAV: $(STAGE0)/%.WAV $(STAGE1)/%.soxnoiseprof
 	sox $< $@ noisered $(STAGE1)/$*.soxnoiseprof 1
@@ -50,7 +50,7 @@ stage2: $(STAGE2_CSV_FILES) $(STAGE2_JSON_FILES)
 # audacity label files
 #
 $(STAGE1)/%.txt: $(STAGE1)/%.WAV $(STAGE1)/%-discogs-ids.csv
-	set -x; while read TAG DISCOGS SIDE REST; do ~/src/vinyl-encoder/ve-silencedetect $(STAGE1)/$${DISCOGS}.json $< $${SIDE} $@ 2> $(STAGE1)/$*.log; done < $(STAGE1)/$*-discogs-ids.csv; set +x
+	set -x; while read TAG DISCOGS SIDE REST; do ~/src/vinyl-encoder/ve-silencedetect --noise_db=-100 --silence_length=3 $(STAGE1)/$${DISCOGS}.json $< $${SIDE} $@ 2> $(STAGE1)/$*.log; done < $(STAGE1)/$*-discogs-ids.csv; set +x
 
 STAGE2_TXT_FILES=$(shell echo ${STAGE1}/*.csv | sed 's!-discogs-ids.csv!.txt!g')
 
