@@ -1,0 +1,23 @@
+#!/usr/bin/python
+#
+
+import argparse
+
+p = argparse.ArgumentParser(description="Tag files using discogstagger3")
+p.add_argument('source', help='Source directory with the encoded untagged files')
+p.add_argument('dest', help='Destination directory for the discogs-tagged media')
+p.add_argument('--discogs-cfg', help='Discogstagger configuration file')
+p.add_argument('--discogs-release', help='Discogs release ID')
+p.add_argument('--reference', help='Already tagged album to copy over tags')
+p.add_argument('--album-art', help='Copy over album art', action="store_true")
+p.add_argument
+args=p.parse_args()
+
+# Principle operation:
+# 1. Tag first encoding of album properly with album art
+# 2. Tag successive encodings of album with JSON file
+# 3. Copy over album art from first album
+# 4. Copy/link in auxilliary files
+# 5. Create bittorrent?
+
+# python ~/src/discogstagger3/discogstagger2.py -r 50309 -s ~/Music/Temp/2/MP3-128-CBR/50309 -d ~/Music/Temp/3_/MP3-128-CBR/ -c ~/src/vinyl-encoder/discogstagger3.conf
