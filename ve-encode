@@ -52,6 +52,7 @@ do
 				;;
 			--quiet)
 				QUIET="--quiet"
+				;;
 			--force)
 				FORCE="Y"
 				;;
@@ -94,18 +95,18 @@ do
 						exit
 						;;
 				esac
-				[ -z "${OUT_FILE}" ] && OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.mp3"
+				[ -z "${OUT_FILE}" ] && MP3_OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.mp3" || MP3_OUT_FILE="$OUT_FILE"
 				lame $MP3_STRAT --tn ${TRACK_NO} ${QUIET} \
 					"${IN_FILE}" \
-					"${OUT_FILE}"
+					"${MP3_OUT_FILE}"
 				;;
 			FLAC-*)
 				# Encode as FLAC
 				FLAC_BPS=${FORMAT_COMPONENTS[1]}
-				[ -z "${OUT_FILE}" ] && OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.flac"
+				[ -z "${OUT_FILE}" ] && FLAC_OUT_FILE="${DIR_TEMP_COMPRESSED}/${COMPRESSED_FORMAT}/${DISCOGS_RELEASE}/${DISCOGS_SIDE}${TRACK_NO}.flac" || FLAC_OUT_FILE="$OUT_FILE"
 				flac --keep-foreign-metadata --best \
 					"${IN_FILE}" \
-					-o "${OUT_FILE}"
+					-o "${FLAC_OUT_FILE}"
 				;;
 			*)
 				echo "Compressed format \"${COMPRESSED_FORMAT}\" not recognised."
