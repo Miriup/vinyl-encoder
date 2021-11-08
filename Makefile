@@ -4,8 +4,19 @@
 #
 STAGE0=0-Vanilla
 STAGE1=1-noisereduced
-#STAGE2=2-json
+STAGE2=2-sliced
+STAGE3=3-encoded
 
+#
+# Vinyl encoder tools
+#
+VE_SLICE=~/src/vinyl-encoder/ve-slice
+VE_ENCODE=~/src/vinyl-encoder/ve-encode
+
+#
+# Config
+#
+COMPRESSED_FORMATS="MP3-128-CBR MP3-240-VBR FLAC-24"
 #
 # Vanilla
 #
@@ -57,3 +68,29 @@ STAGE2_TXT_FILES=$(shell echo ${STAGE1}/*.csv | sed 's!-discogs-ids.csv!.txt!g')
 txt-files: $(STAGE2_TXT_FILES)
 
 .PRECIOUS: $(STAGE1)/%.soxnoiseprof $(STAGE1_FILES) $(STAGE2)/%.json $(STAGE1)/%.txt
+#
+# Stage 2: slicing
+#
+stage2:
+	set -x; cat $(STAGE1)/*.csv | while read TAG DISCOGS SIDE REST; do echo $$TAG $$DISCOGS $$SIDE; test -e "$(STAGE0)/$$TAG.WAV" -a -e "$(STAGE1)/$$TAG.txt" && $(MAKE) TAG=$$TAG DISCOGS=$$DISCOGS SIDE=$$SIDE $(STAGE2)/$$DISCOGS/$$DISCOGS-$$SIDE-1.WAV; done
+
+$(STAGE2)/$(DISCOGS)/$(DISCOGS)-$(SIDE)-1.wav: $(STAGE0)/$(TAG).WAV $(STAGE1)/$(TAG)-discogs-ids.csv $(STAGE1)/$(TAG).txt
+	$(VE_SLICE) --output-dir $(STAGE2) --discogs-csv $(STAGE1)/$(TAG)-discogs-ids.csv $(STAGE0)/$(TAG).WAV $(STAGE1)/$(TAG).txt
+
+#
+# Stage 3: encoding
+#
+# Note: Variable name DISCOGS_RELEASE instead of DISCOGS below to avoid triggering stage2 rules. Ugly trick, I know.
+#
+stage3:
+	#set -x; for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do find $(STAGE2) -name '*-1.wav' | sed 's!^$(STAGE2)!$(STAGE3)/$(COMPRESSED_FORMAT)!;s!-1.wav!1.mp3!' | xargs $(MAKE) COMPRESSED_FORMAT="$$COMPRESSED_FORMAT"; done
+	set -x; \
+	for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do \
+		find $(STAGE2) -name '*-1.wav' | while read IN_FILE; do \
+			IFS='-.' read DISCOGS_RELEASE DISCOGS_SIDE TRACK_NO EXTENSION <<< $$(basename $$IN_FILE); \
+			$(MAKE) DISCOGS_RELEASE=$$DISCOGS_RELEASE SIDE=$$DISCOGS_SIDE NR=$$TRACK_NO COMPRESSED_FORMAT="$$COMPRESSED_FORMAT" $(STAGE3)/$$COMPRESSED_FORMAT/$$DISCOGS_RELEASE/$${DISCOGS_SIDE}1.mp3; \
+			done \
+		done
+
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(SIDE)1.mp3: $(STAGE2)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE)-$(SIDE)-1.wav
+	$(VE_ENCODE) "$<" --output-dir $(STAGE3) --quiet --compressed-formats "$(COMPRESSED_FORMAT)"
