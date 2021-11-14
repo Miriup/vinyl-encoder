@@ -1,0 +1,16 @@
+# Tools to check the generated ID3 tags:
+media-sound/id3v2
+media-sound/id3tool
+media-sound/id3ted
+media-sound/id3ed
+media-sound/id3
+media-sound/lame
+media-libs/flac
+# discogstagger3 needs it. 
+# Albeit we aren't using this functionality:
+dev-python/watchdog
+media-libs/mutagen
+dev-python/requests
+dev-python/nose
+dev-python/mako
+dev-python/coverage
