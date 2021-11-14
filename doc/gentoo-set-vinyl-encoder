@@ -1,0 +1,11 @@
+# Tools to check the generated ID3 tags:
+media-sound/id3v2
+media-sound/id3tool
+media-sound/id3ted
+media-sound/id3ed
+media-sound/id3
+media-sound/lame
+media-libs/flac
+media-sound/sox
+media-video/ffmpeg
+media-sound/audacity
