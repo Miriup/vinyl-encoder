@@ -9,3 +9,11 @@ media-libs/flac
 media-sound/sox
 media-video/ffmpeg
 media-sound/audacity
+# discogstagger3 needs it. 
+# Albeit we aren't using this functionality:
+dev-python/watchdog
+media-libs/mutagen
+dev-python/requests
+dev-python/nose
+dev-python/mako
+dev-python/coverage
