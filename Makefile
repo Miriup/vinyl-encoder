@@ -6,6 +6,7 @@ STAGE0=0-Vanilla
 STAGE1=1-noisereduced
 STAGE2=2-sliced
 STAGE3=3-encoded
+STAGE4=4-tagged
 
 #
 # Vinyl encoder tools
@@ -55,7 +56,7 @@ $(STAGE1)/%.json:
 
 json-files: $(STAGE2_JSON_FILES)
 
-stage2: $(STAGE2_CSV_FILES) $(STAGE2_JSON_FILES)
+#stage2: $(STAGE2_CSV_FILES) $(STAGE2_JSON_FILES)
 
 #
 # audacity label files
@@ -74,7 +75,7 @@ txt-files: $(STAGE2_TXT_FILES)
 stage2:
 	set -x; cat $(STAGE1)/*.csv | while read TAG DISCOGS SIDE REST; do echo $$TAG $$DISCOGS $$SIDE; test -e "$(STAGE0)/$$TAG.WAV" -a -e "$(STAGE1)/$$TAG.txt" && $(MAKE) TAG=$$TAG DISCOGS=$$DISCOGS SIDE=$$SIDE $(STAGE2)/$$DISCOGS/$$DISCOGS-$$SIDE-1.WAV; done
 
-$(STAGE2)/$(DISCOGS)/$(DISCOGS)-$(SIDE)-1.wav: $(STAGE0)/$(TAG).WAV $(STAGE1)/$(TAG)-discogs-ids.csv $(STAGE1)/$(TAG).txt
+$(STAGE2)/$(DISCOGS)/$(DISCOGS)-$(SIDE)-1.WAV: $(STAGE0)/$(TAG).WAV $(STAGE1)/$(TAG)-discogs-ids.csv $(STAGE1)/$(TAG).txt
 	$(VE_SLICE) --output-dir $(STAGE2) --discogs-csv $(STAGE1)/$(TAG)-discogs-ids.csv $(STAGE0)/$(TAG).WAV $(STAGE1)/$(TAG).txt
 
 #
@@ -86,11 +87,40 @@ stage3:
 	#set -x; for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do find $(STAGE2) -name '*-1.wav' | sed 's!^$(STAGE2)!$(STAGE3)/$(COMPRESSED_FORMAT)!;s!-1.wav!1.mp3!' | xargs $(MAKE) COMPRESSED_FORMAT="$$COMPRESSED_FORMAT"; done
 	set -x; \
 	for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do \
-		find $(STAGE2) -name '*-1.wav' | while read IN_FILE; do \
+		find $(STAGE2) -name '*.wav' | while read IN_FILE; do \
 			IFS='-.' read DISCOGS_RELEASE DISCOGS_SIDE TRACK_NO EXTENSION <<< $$(basename $$IN_FILE); \
-			$(MAKE) DISCOGS_RELEASE=$$DISCOGS_RELEASE SIDE=$$DISCOGS_SIDE NR=$$TRACK_NO COMPRESSED_FORMAT="$$COMPRESSED_FORMAT" $(STAGE3)/$$COMPRESSED_FORMAT/$$DISCOGS_RELEASE/$${DISCOGS_SIDE}1.mp3; \
+			[[ $${COMPRESSED_FORMAT} == FLAC* ]] && EXT=flac || EXT=mp3; \
+			$(MAKE) DISCOGS_RELEASE=$$DISCOGS_RELEASE SIDE=$$DISCOGS_SIDE NR=$$TRACK_NO COMPRESSED_FORMAT="$$COMPRESSED_FORMAT" $(STAGE3)/$$COMPRESSED_FORMAT/$$DISCOGS_RELEASE/$${DISCOGS_SIDE}$${TRACK_NO}{.$${EXT},-spectrogram.png,.noiseprofile} ; \
 			done \
 		done
 
-$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(SIDE)1.mp3: $(STAGE2)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE)-$(SIDE)-1.wav
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(SIDE)$(NR).mp3: $(STAGE2)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE)-$(SIDE)-$(NR).wav
 	$(VE_ENCODE) "$<" --output-dir $(STAGE3) --quiet --compressed-formats "$(COMPRESSED_FORMAT)"
+
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(SIDE)$(NR)-spectrogram.png: $(STAGE2)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE)-$(SIDE)-$(NR)-spectrogram.png
+	ln $< $@
+
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(SIDE)$(NR).noiseprofile: $(STAGE2)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE)-$(SIDE)-$(NR).noiseprofile
+	ln $< $@
+
+#
+# Stage 4: Tagging
+#
+# discogstagger leaves a .done file in the source directory and we use it to track stage completion per record
+#
+stage4:
+	#set -x; for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do find $(STAGE2) -name '*-1.wav' | sed 's!^$(STAGE2)!$(STAGE3)/$(COMPRESSED_FORMAT)!;s!-1.wav!1.mp3!' | xargs $(MAKE) COMPRESSED_FORMAT="$$COMPRESSED_FORMAT"; done
+	set -x; \
+	for COMPRESSED_FORMAT in "$(COMPRESSED_FORMATS)"; do \
+		find $(STAGE2) -name '*-1.wav' | while read IN_FILE; do \
+			IFS='-.' read DISCOGS_RELEASE DISCOGS_SIDE TRACK_NO EXTENSION <<< $$(basename $$IN_FILE); \
+			$(MAKE) DISCOGS_RELEASE=$$DISCOGS_RELEASE COMPRESSED_FORMAT="$$COMPRESSED_FORMAT" $(STAGE3)/$$COMPRESSED_FORMAT/$$DISCOGS_RELEASE/.done; \
+			done \
+		done
+
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/.done: $(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/$(DISCOGS_RELEASE).json
+	#python ~/src/discogstagger3/discogstagger2.py -s $< -d $@ -r $(DISCOGS_RELEASE) -c discogstagger3.conf
+	python3 ~/src/discogstagger3/discogstagger2.py -r $(DISCOGS_RELEASE) -d $(STAGE4)/$(COMPRESSED_FORMAT) -s $$(dirname $<) -c ~/src/vinyl-encoder/discogstagger3.conf
+
+$(STAGE3)/$(COMPRESSED_FORMAT)/$(DISCOGS_RELEASE)/%.json: $(STAGE1)/%.json
+	ln $< $@

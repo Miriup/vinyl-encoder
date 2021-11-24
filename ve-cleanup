@@ -1,0 +1,17 @@
+#!/bin/bash
+set -x
+
+while read DIR
+do
+	pushd "${DIR}"
+	mkdir aux
+	mv *.json *.png *.noiseprofile aux/
+	rm id.txt
+	if [ "x$1" == "x--zip" ]
+	then
+		cd ..
+		zip -r "$(basename "${DIR}")" "$(basename "${DIR}")"
+		mktorrent "$(basename "${DIR}")".zip
+	fi
+	popd
+done
