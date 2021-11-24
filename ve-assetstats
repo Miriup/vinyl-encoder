@@ -1,0 +1,57 @@
+#!/usr/bin/python
+
+import argparse		# Command line args
+import json		# Parse json
+import csv
+import logging
+
+logging.basicConfig(level=logging.DEBUG)
+
+# Parse command line parameters
+p = argparse.ArgumentParser(description="Finds the optimal silence detection parameters aided by discogs release info")
+p.add_argument('csv', help='CSV file to generate with pseudo-commercial asset stats')
+p.add_argument('json', help='JSON files to get the information from', nargs='+')
+args=p.parse_args()
+
+with open(args.csv, 'w') as csvfile:
+
+	csvwriter = csv.DictWriter(csvfile, delimiter='\t', fieldnames=[
+		"Discogs ID",
+		"Label1 name",
+		"Label1 catalog number",
+		"Title",
+		"Artist1 name",
+		"Release date",
+		"Community haves",
+		"Community wants",
+		"Community rating count",
+		"Community rating average",
+		"Number for sale",
+		"Lowest price",
+		"URL"
+		])
+	csvwriter.writeheader()
+
+	for file in args.json:
+		with open(file,'r') as f:
+			j = json.load(f)
+			try:
+				r = {
+					"Discogs ID": j["id"],
+					"Title": j["title"],
+					"Artist1 name": j["artists"][0]["name"],
+					"Label1 name": j["labels"][0]["name"],
+					"Label1 catalog number": j["labels"][0]["catno"],
+					"Release date": j["released"],
+					"Community haves": j["community"]["have"],
+					"Community wants": j["community"]["want"],
+					"Community rating count": j["community"]["rating"]["count"],
+					"Community rating average": j["community"]["rating"]["average"],
+					"Number for sale": j["num_for_sale"],
+					"Lowest price": j["lowest_price"],
+					"URL": j["uri"]
+					}
+				csvwriter.writerow(r)
+			except KeyError as e:
+				logging.exception(file, e)
+				continue
